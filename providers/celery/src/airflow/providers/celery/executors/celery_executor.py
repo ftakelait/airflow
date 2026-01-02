@@ -50,11 +50,10 @@ from airflow.cli.cli_config import (
     GroupCommand,
     lazy_load_command,
 )
-from airflow.configuration import conf
 from airflow.exceptions import AirflowProviderDeprecationWarning
 from airflow.executors.base_executor import BaseExecutor
 from airflow.providers.celery.version_compat import AIRFLOW_V_3_0_PLUS
-from airflow.providers.common.compat.sdk import AirflowTaskTimeout, Stats
+from airflow.providers.common.compat.sdk import AirflowTaskTimeout, Stats, conf
 from airflow.utils.state import TaskInstanceState
 
 log = logging.getLogger(__name__)
@@ -97,24 +96,24 @@ airflow celery worker
 ARG_BROKER_API = Arg(("-a", "--broker-api"), help="Broker API")
 ARG_FLOWER_HOSTNAME = Arg(
     ("-H", "--hostname"),
-    default=conf.get("celery", "FLOWER_HOST"),
+    default=conf.get("celery", "FLOWER_HOST", fallback="0.0.0.0"),
     help="Set the hostname on which to run the server",
 )
 ARG_FLOWER_PORT = Arg(
     ("-p", "--port"),
-    default=conf.getint("celery", "FLOWER_PORT"),
+    default=conf.getint("celery", "FLOWER_PORT", fallback=5555),
     type=int,
     help="The port on which to run the server",
 )
 ARG_FLOWER_CONF = Arg(("-c", "--flower-conf"), help="Configuration file for flower")
 ARG_FLOWER_URL_PREFIX = Arg(
     ("-u", "--url-prefix"),
-    default=conf.get("celery", "FLOWER_URL_PREFIX"),
+    default=conf.get("celery", "FLOWER_URL_PREFIX", fallback=""),
     help="URL prefix for Flower",
 )
 ARG_FLOWER_BASIC_AUTH = Arg(
     ("-A", "--basic-auth"),
-    default=conf.get("celery", "FLOWER_BASIC_AUTH"),
+    default=conf.get("celery", "FLOWER_BASIC_AUTH", fallback=""),
     help=(
         "Securing Flower with Basic Authentication. "
         "Accepts user:password pairs separated by a comma. "
@@ -127,13 +126,13 @@ ARG_AUTOSCALE = Arg(("-a", "--autoscale"), help="Minimum and Maximum number of w
 ARG_QUEUES = Arg(
     ("-q", "--queues"),
     help="Comma delimited list of queues to serve",
-    default=conf.get("operators", "DEFAULT_QUEUE"),
+    default=conf.get("operators", "DEFAULT_QUEUE", fallback="default"),
 )
 ARG_CONCURRENCY = Arg(
     ("-c", "--concurrency"),
     type=int,
     help="The number of worker processes",
-    default=conf.getint("celery", "worker_concurrency"),
+    default=conf.getint("celery", "worker_concurrency", fallback=16),
 )
 ARG_CELERY_HOSTNAME = Arg(
     ("-H", "--celery-hostname"),
@@ -305,7 +304,7 @@ class CeleryExecutor(BaseExecutor):
         # Celery doesn't support bulk sending the tasks (which can become a bottleneck on bigger clusters)
         # so we use a multiprocessing pool to speed this up.
         # How many worker processes are created for checking celery task state.
-        self._sync_parallelism = conf.getint("celery", "SYNC_PARALLELISM")
+        self._sync_parallelism = conf.getint("celery", "SYNC_PARALLELISM", fallback=0)
         if self._sync_parallelism == 0:
             self._sync_parallelism = max(1, cpu_count() - 1)
         from airflow.providers.celery.executors.celery_executor_utils import BulkStateFetcher
@@ -313,7 +312,7 @@ class CeleryExecutor(BaseExecutor):
         self.bulk_state_fetcher = BulkStateFetcher(self._sync_parallelism)
         self.tasks = {}
         self.task_publish_retries: Counter[TaskInstanceKey] = Counter()
-        self.task_publish_max_retries = conf.getint("celery", "task_publish_max_retries")
+        self.task_publish_max_retries = conf.getint("celery", "task_publish_max_retries", fallback=3)
 
     def start(self) -> None:
         self.log.debug("Starting Celery Executor using %s processes for syncing", self._sync_parallelism)
